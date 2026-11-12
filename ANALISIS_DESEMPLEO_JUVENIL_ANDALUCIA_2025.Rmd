@@ -1,0 +1,730 @@
+---
+output:
+  pdf_document:
+    toc: false
+    number_sections: true
+    fig_caption: true
+    extra_dependencies: ["float"]
+geometry: margin=1.8cm
+fontsize: 10pt
+lang: es
+header-includes:
+  - \usepackage{fvextra}
+  - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,commandchars=\\\{\}}
+  - \DefineVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere}
+  - \setlength{\emergencystretch}{3em}
+---
+
+\begin{titlepage}
+\thispagestyle{empty}
+\centering
+
+\vspace*{2cm}
+
+\begin{center}
+\Huge
+\textbf{Desempleo juvenil, tejido empresarial y Formación Profesional en los municipios de Andalucía}
+\end{center}
+
+\vspace{1.2cm}
+
+
+\vspace{2cm}
+
+\begin{center}
+{\large \textbf{Autor:}\par}
+
+\vspace{0.3cm}
+{\large
+Álvaro Espinosa López\par}
+\end{center}
+\vspace{0.8cm}
+\end{titlepage}
+\setcounter{page}{1}
+
+```{r configuracion, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 6,
+  fig.height = 2.6,
+  fig.align = "center",
+  out.width = "85%"
+)
+
+options(width = 60)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(car)
+library(lmtest)
+library(sandwich)
+```
+
+# Introducción
+
+El desempleo juvenil constituye un problema relevante del mercado laboral andaluz, cuya incidencia presenta diferencias entre municipios. Estas desigualdades pueden estar relacionadas con el tamaño de la población, el tejido empresarial, las condiciones socioeconómicas y la disponibilidad de Formación Profesional (FP).
+
+El objetivo de este trabajo es analizar las asociaciones entre dichas características y el desempleo juvenil registrado en los municipios de Andalucía. Para ello, se construye una base de datos municipal a partir de distintas fuentes estadísticas oficiales y se aplican técnicas de análisis descriptivo y regresión lineal múltiple. Este enfoque permite estudiar las diferencias territoriales del indicador, evaluar la contribución estadística de las variables consideradas e identificar municipios cuyos valores se alejan de los estimados por el modelo.
+
+Se plantean dos preguntas de investigación:
+
+**Pregunta 1.** ¿En qué medida las características demográficas, empresariales y la oferta local de FP están asociadas con las diferencias municipales en el desempleo juvenil registrado?
+
+**Pregunta 2.** ¿Qué municipios presentan valores de desempleo juvenil registrado considerablemente superiores o inferiores a los estimados a partir de sus características?
+
+# Los datos
+
+## Fuentes de información y originalidad
+
+El estudio integra cinco fuentes estadísticas oficiales, tomando como unidad de análisis los municipios de Andalucía:
+
+- **INE (2025):** población municipal total y población de 16 a 24 años.
+- **SEPE (2025):** número mensual de personas desempleadas registradas menores de 25 años, correspondiente a los doce meses de 2025.
+- **DIRCE (2025):** número de empresas por municipio.
+- **Atlas de Distribución de Renta de los Hogares, INE (2023):** renta neta media por persona.
+- **Junta de Andalucía (curso 2024-2025):** oferta municipal de Formación Profesional de grado medio y superior.
+
+La base de datos utilizada es de elaboración propia y se ha construido mediante la integración, depuración y transformación de información procedente de las cinco fuentes estadísticas oficiales. La combinación de indicadores demográficos, empresariales, socioeconómicos y educativos permite estudiar conjuntamente sus asociaciones con el desempleo juvenil registrado a escala municipal.
+
+Para construir el indicador de desempleo juvenil registrado se utilizaron los datos mensuales del SEPE correspondientes a 2025. Los valores censurados identificados como `<5` se sustituyeron por 2,5, mientras que los valores ausentes (`NA`) se mantuvieron como tales. El desempleo juvenil mensual se obtuvo sumando los registros de hombres y mujeres menores de 25 años, siempre que ambos componentes estuvieran disponibles.
+
+Posteriormente, se calculó el promedio anual utilizando únicamente los meses válidos de cada municipio. De los 757 municipios incluidos en el análisis, 667 disponen de información de los doce meses y los 90 restantes presentan entre uno y once meses válidos. La aproximación de los valores censurados y la diferente disponibilidad mensual introducen incertidumbre en el indicador, especialmente en municipios pequeños. Las diferencias en los periodos de referencia de las fuentes constituyen una limitación adicional del estudio.
+
+## Construcción, depuración y definición de variables
+
+La integración se realizó mediante el script `construir_dataset.R`, utilizando el código municipal como identificador. Se homogeneizaron las variables y se construyeron los indicadores de desempleo juvenil, densidad empresarial y presencia de FP. De los 785 municipios iniciales, 22 carecían de información del SEPE, 11 de datos empresariales y dos de renta. Las ausencias se solapaban: cinco municipios carecían simultáneamente de datos del SEPE y DIRCE, y los dos sin renta pertenecían a ese grupo. Tras excluir los registros incompletos, se obtuvo una base analítica de **757 municipios y 20 variables**, sin valores ausentes ni códigos municipales duplicados, almacenada en `dataset_final.csv`.
+
+Como **variable respuesta**, se construye el siguiente indicador municipal de desempleo juvenil registrado:
+$$
+I_i =
+\frac{\overline{D}_{<25,i}}{P_{16-24,i}}
+\times 100
+$$
+donde $\overline{D}_{<25,i}$ representa el promedio anual de personas desempleadas registradas menores de 25 años y $P_{16-24,i}$ la población municipal de 16 a 24 años. El indicador representa el promedio mensual de personas menores de 25 años registradas como desempleadas durante 2025, expresado por cada 100 residentes de 16 a 24 años del municipio. Se utiliza como medida aproximada de la incidencia territorial del desempleo juvenil registrado. No equivale a la tasa oficial de paro juvenil, cuyo denominador es la población activa, ni permite estimar directamente la proporción de jóvenes desempleados entre quienes participan en el mercado laboral.
+
+Como **variables explicativas**, se consideran las siguientes características municipales:
+
+| Variable | Descripción |
+|:---|:---|
+| `log_pob_total` | Logaritmo natural de la población total. |
+| `empresas_1000hab` | Empresas por cada 1.000 habitantes. |
+| `log_renta` | Logaritmo natural de la renta neta media por persona. |
+| `tiene_FP` | Presencia de oferta local de FP (1 = sí; 0 = no). |
+| `provincia` | Provincia del municipio. |
+
+La variable `tiene_FP` identifica únicamente la existencia de oferta local de Formación Profesional de grado medio o superior. No mide el número de plazas, la matriculación del alumnado ni el acceso a centros situados en otros municipios. Por tanto, sus coeficientes deben interpretarse como asociaciones con la presencia de oferta educativa local, y no como una medida del efecto de cursar Formación Profesional sobre el desempleo juvenil. Las transformaciones logarítmicas permiten estudiar asociaciones en función de cambios relativos de población y renta, y la provincia se incorpora para recoger diferencias territoriales. Dado el carácter observacional y transversal del análisis, los resultados se interpretan como **asociaciones estadísticas, no como efectos causales**.
+
+# Análisis descriptivo y exploratorio
+
+## Lectura de los datos y estadísticos descriptivos
+
+En primer lugar, se importa el conjunto de datos construido previamente y se comprueban sus dimensiones:
+
+```{r lectura-datos, echo=TRUE, results='hide'}
+# Importamos nuestro dataset.
+datos <- read_csv(
+  "dataset_final.csv",
+  col_types = cols(cod_municipio = col_character()),
+  show_col_types = FALSE
+)
+
+# Comprobamos municipios, variables, NA y duplicados.
+comprobacion <- c(
+  Municipios = nrow(datos),
+  Variables = ncol(datos),
+  NAs = sum(is.na(datos)),
+  Duplicados = sum(duplicated(datos$cod_municipio))
+)
+```
+
+La comprobación confirma que la base analítica consta de `r comprobacion["Municipios"]` municipios y `r comprobacion["Variables"]` variables, con `r comprobacion["NAs"]` valores ausentes y `r comprobacion["Duplicados"]` códigos municipales duplicados. A continuación, se calculan medidas de tendencia central, dispersión y posición para las principales variables cuantitativas, con el objetivo de caracterizar las diferencias entre municipios e identificar posibles valores extremos.
+
+```{r estadisticos-descriptivos, echo=FALSE}
+# Seleccionamos las variables cuantitativas de interés
+variables <- c("tasa_paro_joven", "pob_total", "empresas_1000hab", "renta")
+
+# Ahora creamos una función para calcular los estadísticos descriptivos
+describir <- function(x){
+  c(Media = mean(x, na.rm = TRUE), Mediana = median(x, na.rm = TRUE), Desv_tipica = sd(x, na.rm = TRUE),
+    Minimo = min(x, na.rm = TRUE), Q1 = unname(quantile(x, 0.25, na.rm = TRUE)),
+    Q3 = unname(quantile(x, 0.75, na.rm = TRUE)), Maximo = max(x, na.rm = TRUE))
+}
+
+# Aplicamos la función a las variables seleccionadas y lo convertimos los resultados en una tabla
+tabla_descriptivos <- data.frame(
+  Variable = c("Desempleo juvenil (%)", "Población", "Empresas/1.000 hab.", "Renta por persona (€)"),
+  t(sapply(datos[variables], describir)), row.names = NULL
+)
+
+# Presentamos los resultados para que se vean en el PDF.
+kable(tabla_descriptivos, digits = 2, caption = "Estadísticos descriptivos de las principales variables")
+```
+
+El indicador de desempleo juvenil registrado presenta una media del 6,69 % y una mediana del 5,80 %, lo que refleja una distribución asimétrica hacia valores elevados. El 50 % central de los municipios se sitúa entre el 4,46 % y el 7,43 %, con un máximo del 32,05 %. La población municipal muestra una marcada heterogeneidad: su media (11.452 habitantes) supera ampliamente la mediana (2.823 habitantes), lo que justifica utilizar una transformación logarítmica en los modelos posteriores. La densidad empresarial alcanza una media de 51,49 empresas por cada 1.000 habitantes, mientras que la renta neta media por persona se sitúa en 11.320,54 €. En conjunto, estos resultados evidencian diferencias considerables entre municipios y justifican el análisis exploratorio de sus posibles asociaciones con el desempleo juvenil.
+
+## Distribución del indicador y relación con las variables cuantitativas
+
+El histograma (Figura 1) confirma la asimetría positiva observada en los estadísticos descriptivos. La mayor concentración de municipios se encuentra en valores relativamente bajos del indicador, mientras que la cola derecha evidencia la presencia de municipios con desempleo juvenil registrado considerablemente superior al habitual. Esta distribución aconseja prestar especial atención a las observaciones extremas durante el diagnóstico de los modelos de regresión.
+
+```{r distribucion-paro, echo=FALSE, fig.width=5.8, fig.height=2.3, out.width="78%", fig.cap="Distribución del indicador de desempleo juvenil registrado"}
+ggplot(datos, aes(x = tasa_paro_joven)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 30, fill = "steelblue", color = "white", alpha = 0.8) +
+  geom_density(color = "firebrick", linewidth = 1) +
+  labs(x = "Indicador de desempleo juvenil registrado (%)", y = "Densidad") +
+  theme_minimal(base_size = 9)
+```
+
+Con el objetivo de explorar las posibles asociaciones entre el desempleo juvenil registrado y las características municipales, se calculan los coeficientes de correlación lineal de Pearson ($r$) y se representan los diagramas de dispersión para las tres variables explicativas cuantitativas junto con su recta de regresión lineal simple (Figura 2):
+
+```{r correlaciones-codigo, echo=TRUE, results='hide'}
+variables_x <- c("log_pob_total", "empresas_1000hab", "log_renta") # Variables explicativas cuantitativas
+# Calculamos las correlaciones de Pearson
+correlaciones <- sapply(
+  datos[variables_x],
+  function(x) cor(x, datos$tasa_paro_joven)
+)
+```
+
+```{r relaciones-cuantitativas, echo=FALSE, fig.width=6.5, fig.height=2.3, out.width="92%", fig.cap="Asociación del desempleo juvenil con las características municipales"}
+# Preparamos las etiquetas de cada uno de los 3 gráficos que vamos a representar de golpe
+# COn formatC() conseguimos pasar las correlaciones a punto fijo ("f") con tres decimales y separados por la coma ","
+etiquetas_cor <- sprintf(
+  c("Población (log) [r = %s]", "Empresas/1.000 hab. [r = %s]", "Renta (log) [r = %s]"),
+  formatC(correlaciones, format = "f", digits = 3, decimal.mark = ",")
+)
+
+# Preparamos los datos para representar las tres relaciones 
+datos_graficos <- datos |>
+  select(tasa_paro_joven, all_of(variables_x)) |>
+  tidyr::pivot_longer(cols = all_of(variables_x), names_to = "Variable", values_to = "Valor") |>
+  mutate(Variable = factor(Variable, levels = variables_x, labels = etiquetas_cor))
+
+# Representamos las tres relaciones en una única figura
+ggplot(datos_graficos, aes(x = Valor, y = tasa_paro_joven)) +
+  geom_point(alpha = 0.3, color = "steelblue", size = 0.7) +
+  geom_smooth(method = "lm", se = FALSE, color = "firebrick", linewidth = 0.7) +
+  facet_wrap(~ Variable, scales = "free_x", nrow = 1) +
+  labs(x = NULL, y = "Desempleo juvenil (%)") +
+  theme_minimal(base_size = 9)
+```
+
+El tamaño municipal presenta la asociación lineal más intensa con el desempleo juvenil registrado ($r = `r formatC(correlaciones["log_pob_total"], format="f", digits=3, decimal.mark=",")`$): la relación es negativa, por lo que los municipios más poblados tienden a presentar valores inferiores del indicador. La densidad empresarial también muestra una asociación negativa, aunque más débil ($r = `r formatC(correlaciones["empresas_1000hab"], format="f", digits=3, decimal.mark=",")`$); por el contrario, la renta presenta una correlación positiva muy débil ($r = `r formatC(correlaciones["log_renta"], format="f", digits=3, decimal.mark=",")`$ ). Estas asociaciones son descriptivas y no permiten establecer relaciones causales. Además, no consideran simultáneamente las demás características municipales, por lo que sus resultados podrán diferir de los obtenidos mediante regresión múltiple.
+
+## Desempleo juvenil según la presencia de Formación Profesional y provincia
+
+Para explorar la asociación entre la oferta local de Formación Profesional y el desempleo juvenil registrado, se compara la distribución del indicador entre los municipios con y sin oferta local de FP de grado medio o superior mediante estadísticos descriptivos por grupo y un diagrama de cajas (Figura 3).
+
+```{r fp-descriptivo, echo=FALSE}
+# Calculamos los estadísticos por presencia de FP.
+tabla_fp <- datos |>
+  group_by(tiene_FP) |>
+  summarise(Municipios = n(), Media = mean(tasa_paro_joven), Mediana = median(tasa_paro_joven), Desv_tipica = sd(tasa_paro_joven), .groups = "drop") |>
+  mutate(Grupo = ifelse(tiene_FP == 1, "Con FP", "Sin FP")) |>
+  select(Grupo, Municipios, Media, Mediana, Desv_tipica)
+
+kable(tabla_fp, digits = 2, col.names = c("Grupo", "Municipios", "Media (%)", "Mediana (%)", "Desv. típica"),
+      caption = "Desempleo juvenil registrado según presencia de FP")
+```
+
+```{r fp-grafico, echo=FALSE, fig.width=5.8, fig.height=2.3, out.width="78%", fig.pos="H", fig.cap="Distribución del desempleo juvenil según presencia de FP"}
+ggplot(datos, aes(x = factor(tiene_FP, levels = c(0, 1), labels = c("Sin FP", "Con FP")), y = tasa_paro_joven)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.7, outlier.alpha = 0.4) +
+  labs(x = "Oferta local de Formación Profesional", y = "Desempleo juvenil registrado (%)") +
+  theme_minimal(base_size = 9)
+```
+
+Los municipios sin oferta local de FP presentan un valor medio del indicador de desempleo juvenil registrado del 7,14 %, frente al 5,73 % de aquellos que disponen de FP, lo que supone una diferencia de 1,41 puntos porcentuales. Las medianas son más próximas (5,92 % y 5,51 %, respectivamente), mientras que la dispersión es mayor en los municipios sin FP. El diagrama de cajas confirma esta diferencia y muestra una mayor presencia de valores extremos elevados en dicho grupo. Estas diferencias son descriptivas y no permiten atribuir un efecto causal a la oferta de FP, ya que ambos grupos pueden diferir en otras características, especialmente en el tamaño municipal.
+
+Para completar el análisis exploratorio, se estudian las diferencias territoriales del indicador entre las ocho provincias andaluzas, calculando el número de municipios analizados y los valores medios y medianos en cada provincia.
+
+```{r provincias-descriptivo, echo=FALSE}
+# Calculamos los estadísticos por provincia.
+tabla_provincias <- datos |>
+  group_by(provincia) |>
+  summarise(Municipios = n(), Media = mean(tasa_paro_joven), Mediana = median(tasa_paro_joven), .groups = "drop") |>
+  arrange(desc(Media))
+
+kable(tabla_provincias, digits = 2, col.names = c("Provincia", "Municipios", "Media (%)", "Mediana (%)"),
+      caption = "Desempleo juvenil registrado por provincia")
+```
+
+Se observan diferencias territoriales en los promedios municipales del indicador de desempleo juvenil registrado. Granada presenta el valor medio más elevado (8,16 %), seguida de Almería (7,28 %) y Huelva (7,27 %), mientras que Jaén registra el promedio más bajo (4,75 %). Estos resultados describen el comportamiento medio de los municipios analizados en cada provincia y no deben interpretarse como tasas provinciales de desempleo juvenil. La diferencia entre Granada y Jaén alcanza los 3,41 puntos porcentuales. Las medianas también muestran diferencias provinciales, aunque el orden no coincide completamente con el de las medias. Estos resultados justifican considerar la provincia como variable explicativa en el modelo de regresión. Dado que las medias se calculan sin ponderación, cada municipio contribuye por igual al promedio provincial, independientemente de su población.
+
+# Modelo estadístico
+
+## Formulación matemática del modelo
+
+Para responder a las preguntas de investigación se plantea un modelo de regresión lineal múltiple en el que la variable respuesta es el indicador municipal de desempleo juvenil registrado. Se dispone de información de $n=757$ municipios andaluces. Para cada municipio $i$, el modelo inicial se expresa como:
+$$Y_i = \beta_0 + \beta_1 \log(P_i) + \beta_2 E_i + \beta_3 \log(R_i) + \beta_4 FP_i + \sum_{k=1}^{7}\gamma_k D_{ik} + \varepsilon_i$$
+donde:
+
+- $Y_i$ representa el indicador de desempleo juvenil registrado del municipio $i$.
+- $P_i$ representa la población total del municipio.
+- $E_i$ representa el número de empresas por cada 1.000 habitantes.
+- $R_i$ representa la renta neta media por persona.
+- $FP_i$ es una variable indicadora que toma el valor 1 si el municipio dispone de oferta local de Formación Profesional y 0 en caso contrario.
+- $D_{ik}$ son las siete variables indicadoras correspondientes a las provincias andaluzas, tomando Almería como categoría de referencia.
+- $\beta_0$ representa el término independiente, mientras que $\beta_1,\ldots,\beta_4$ y $\gamma_1,\ldots,\gamma_7$ son los coeficientes que deben estimarse mediante mínimos cuadrados ordinarios (MCO), minimizando la suma de los cuadrados de los residuos.
+- $\varepsilon_i$ representa el término de error, que recoge la parte del indicador no explicada por las variables incluidas.
+
+La regresión es múltiple porque incorpora varias variables explicativas y es lineal porque los parámetros intervienen linealmente en la ecuación.
+
+## Supuestos estadísticos
+
+La regresión lineal múltiple mediante mínimos cuadrados ordinarios requiere considerar diversos supuestos para interpretar correctamente las estimaciones y realizar inferencia estadística. En primer lugar, se supone una especificación adecuada del modelo y media condicional nula de los errores, $E(\varepsilon_i\mid X)=0$, así como ausencia de multicolinealidad perfecta entre las variables explicativas. Para la inferencia clásica se consideran habitualmente la homocedasticidad, $\operatorname{Var}(\varepsilon_i\mid X)=\sigma^2$, y la ausencia de correlación entre errores de distintas observaciones. En este estudio, la proximidad geográfica de los municipios podría generar dependencia espacial. La normalidad de los errores permite obtener determinados contrastes exactos en muestras finitas, aunque no es necesaria para calcular los estimadores de mínimos cuadrados ordinarios.
+
+Los supuestos se examinan mediante diagnósticos de residuos, multicolinealidad y heterocedasticidad. Ante la presencia de heterocedasticidad, se emplean errores estándar robustos HC3 para mejorar la fiabilidad de la inferencia estadística. No obstante, este procedimiento no corrige posibles problemas de especificación ni la dependencia espacial entre municipios, que constituye una limitación del estudio.
+
+# Análisis estadístico
+
+## Especificación y ajuste del modelo inicial
+
+A partir de la formulación anterior, se ajusta el modelo inicial mediante mínimos cuadrados ordinarios. La provincia se incorpora como factor, utilizando Almería como categoría de referencia para interpretar las diferencias provinciales ajustadas.
+
+```{r ajuste-codigo, echo=TRUE}
+# Convertimos provincia en una variable categórica.
+datos <- datos |> mutate(provincia = relevel(factor(provincia), ref = "Almería"))
+modelo_completo <- lm(tasa_paro_joven ~ log_pob_total + empresas_1000hab + log_renta + tiene_FP + provincia, 
+                      data = datos) # Ajustamos el modelo de regresión lineal múltiple.
+```
+
+```{r ajuste-modelo, echo=FALSE}
+# Hacemos el summary() del modelo de regresión lineal múltiple para poder acceder a los coeficientes
+resumen_ini <- summary(modelo_completo)
+
+# Extraemos los coeficientes del modelo
+coeficientes <- as.data.frame(resumen_ini$coefficients)
+
+# Incorporamos los nombres de las variables.
+coeficientes$Variable <- rownames(coeficientes)
+
+# Ordenamos las columnas.
+coeficientes <- coeficientes |> select(Variable, Estimate, `Std. Error`, `t value`, `Pr(>|t|)`)
+
+# Formateamos los valores p para evitar mostrar ceros.
+coeficientes$`Pr(>|t|)` <- ifelse(coeficientes$`Pr(>|t|)` < 0.0001, "<0,0001",
+                                  formatC(coeficientes$`Pr(>|t|)`, format = "f", digits = 4, decimal.mark = ",")) 
+
+# Calculamos cual es el efecto de duplicar la población (recordemos que está en escala logarítmica, por lo que el incremento exacto cuando la población se duplica es log(2))
+efecto_duplicar_pob <- abs(coef(modelo_completo)["log_pob_total"] * log(2))
+
+# Presentamos la tabla.
+kable(coeficientes, digits = 3, row.names = FALSE,
+      col.names = c("Variable", "Coef.", "Error est.", "t", "Valor p"),
+      caption = "Coeficientes del modelo inicial")
+```
+
+El modelo de regresión lineal múltiple presenta un coeficiente de determinación de $R^2 = `r formatC(resumen_ini$r.squared, format="f", digits=3, decimal.mark=",")`$, un coeficiente de determinación ajustado de $R^2_{\mathrm{aj}} = `r formatC(resumen_ini$adj.r.squared, format="f", digits=3, decimal.mark=",")`$ y un error estándar residual de $`r formatC(resumen_ini$sigma, format="f", digits=3, decimal.mark=",")`$ puntos porcentuales ($n = `r nobs(modelo_completo)`$ municipios). Por tanto, las variables incluidas explican aproximadamente el
+`r formatC(100 * resumen_ini$r.squared, format="f", digits=1, decimal.mark=",")` % de la variabilidad observada del indicador de desempleo juvenil registrado entre municipios.
+
+En el modelo inicial, el tamaño municipal presenta una asociación negativa con el indicador de desempleo juvenil registrado. En particular, duplicar la población se asocia con una disminución estimada de aproximadamente $`r formatC(efecto_duplicar_pob, format="f", digits=2, decimal.mark=",")`$ puntos porcentuales ($\vert{}\hat{\beta}_1\vert{}\ln 2$), manteniendo constantes las restantes variables. Los coeficientes de la densidad empresarial y de la renta presentan signos negativo y positivo, respectivamente, aunque su interpretación requiere considerar la significación estadística y los diagnósticos posteriores. Estos resultados constituyen una primera aproximación que se revisará mediante especificaciones alternativas.
+
+En el modelo inicial, la presencia de Formación Profesional presenta un coeficiente positivo, a diferencia de la comparación descriptiva de medias. Este cambio de signo sugiere que la asociación observada está condicionada por otras características municipales. Su interpretación se retomará tras evaluar los supuestos y comparar las especificaciones alternativas.
+
+## Análisis de multicolinealidad y diagnóstico del modelo inicial
+
+La multicolinealidad aparece cuando existen relaciones lineales importantes entre las variables explicativas. Esta situación puede incrementar los errores estándar de los coeficientes y dificultar la interpretación de sus asociaciones individuales. Para evaluarla se utilizan los factores de inflación de la varianza (VIF). En el caso de la provincia, al tratarse de una variable categórica con varios niveles, se considera el VIF generalizado.
+
+```{r vif-codigo, echo=TRUE}
+vif_modelo <- car::vif(modelo_completo) # Calculamos los factores de inflación de la varianza
+```
+
+```{r multicolinealidad, echo=FALSE}
+# Convertimos los resultados en una tabla
+tabla_vif <- data.frame(
+  Variable = rownames(vif_modelo),
+  VIF_GVIF = vif_modelo[, "GVIF"],
+  Grados_libertad = vif_modelo[, "Df"],
+  GVIF_ajustado = vif_modelo[, "GVIF^(1/(2*Df))"]
+)
+
+# Mostramos la tabla
+kable(tabla_vif, digits = 3, row.names = FALSE,
+      col.names = c("Variable", "VIF/GVIF", "GL", "GVIF ajustado"),
+      caption = "Diagnóstico de multicolinealidad")
+```
+
+Los mayores valores corresponden al logaritmo de la población ($\mathrm{VIF} = 2{,}530$) y a la presencia de Formación Profesional ($\mathrm{VIF} = 2{,}226$), mientras que la densidad empresarial y la renta presentan valores más próximos a la unidad. En el caso de la provincia, el VIF generalizado ajustado por sus grados de libertad es $\mathrm{GVIF}^{1/(2Df)} = 1{,}024$, lo que tampoco sugiere problemas importantes de multicolinealidad. En conjunto, los valores obtenidos no sugieren problemas graves de multicolinealidad y no justifican eliminar variables explicativas por este motivo.
+
+A continuación, se analizan los residuos del modelo inicial para detectar posibles problemas de especificación, patrones no lineales y diferencias en su dispersión, representando conjuntamente los residuos frente a los valores ajustados y el gráfico Q-Q de los residuos estandarizados (Figura 4).
+
+```{r residuos-y-qq, echo=FALSE, fig.show="hold", out.width="48%", fig.width=4.2, fig.height=2.6, fig.pos="H", fig.cap="Diagnóstico de residuos del modelo inicial: Residuos frente a ajustados (izq.) y Gráfico Q-Q normal (der.)"}
+datos_residuos <- data.frame(
+  Ajustados = fitted(modelo_completo),
+  Residuos = residuals(modelo_completo),
+  Est = rstandard(modelo_completo)
+)
+
+ggplot(datos_residuos, aes(x = Ajustados, y = Residuos)) +
+  geom_point(alpha = 0.4, color = "steelblue", size = 0.8) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "firebrick") +
+  geom_smooth(method = "loess", se = FALSE, color = "darkgreen", linewidth = 0.8) +
+  labs(x = "Valores ajustados (%)", y = "Residuos (puntos porcentuales)") +
+  theme_minimal(base_size = 9)
+
+ggplot(datos_residuos, aes(sample = Est)) +
+  stat_qq(color = "steelblue", alpha = 0.5, size = 0.8) +
+  stat_qq_line(color = "firebrick", linewidth = 0.8) +
+  labs(x = "Cuantiles teóricos normales", y = "Residuos estandarizados") +
+  theme_minimal(base_size = 9)
+```
+
+En el gráfico de residuos frente a ajustados (Figura 4, izquierda), la curva suavizada presenta cierta curvatura en forma de U, lo que sugiere que el modelo inicial podría no recoger adecuadamente algunas relaciones no lineales, además de observarse residuos positivos elevados y diferencias en su dispersión. Por su parte, el gráfico Q-Q (Figura 4, derecha) muestra una aproximación a la normalidad en la parte central de la distribución, pero desviaciones importantes en las colas, especialmente en la derecha, donde aparecen residuos positivos elevados. Aunque este resultado no invalida por sí mismo las estimaciones mediante mínimos cuadrados ordinarios, aconseja interpretar con cautela la inferencia estadística convencional y continuar con el diagnóstico de linealidad y heterocedasticidad.
+
+### Evaluación de la linealidad y comparación con la especificación cuadrática
+
+El patrón curvilíneo observado en los residuos del modelo inicial sugiere posibles relaciones no lineales. Para examinarlas se utilizan gráficos de residuos parciales por componente (*component-plus-residual plots*), que permiten estudiar la asociación de cada variable cuantitativa con la respuesta, considerando las restantes variables del modelo (Figura 5).
+
+```{r linealidad-residuos-parciales, echo=TRUE, fig.width=8.5, fig.height=3.0, out.width="95%", fig.pos="H", fig.cap="Evaluación de la linealidad mediante residuos parciales (crPlots)"}
+car::crPlots(modelo_completo, terms = ~ log_pob_total + empresas_1000hab + log_renta,
+             layout = c(1, 3), smooth = TRUE, main = "") # Gráficos de residuos parciales.
+```
+
+Los gráficos de residuos parciales (Figura 5) muestran una curvatura apreciable en la relación entre el logaritmo de la población y el desempleo juvenil registrado. La asociación negativa observada en los municipios de menor tamaño se atenúa conforme aumenta la población, lo que sugiere que una especificación estrictamente lineal podría resultar insuficiente. En cambio, la densidad empresarial y el logaritmo de la renta presentan relaciones aproximadamente lineales. Estos resultados justifican incorporar un término cuadrático del logaritmo de la población y comparar su ajuste con el modelo inicial.
+
+$$Y_i = \beta_0 + \beta_1\log(P_i) + \beta_2[\log(P_i)]^2 + \beta_3E_i + \beta_4\log(R_i) + \beta_5FP_i + \sum_{k=1}^{7}\gamma_kD_{ik} + \varepsilon_i$$
+El término cuadrático permite que la asociación con el tamaño municipal varíe según la población. El modelo continúa siendo lineal en sus parámetros y se estima mediante mínimos cuadrados ordinarios. Ambas especificaciones se comparan mediante el $R^2$ ajustado, el error residual y un contraste $F$ para modelos anidados:
+
+```{r comparacion-modelos-codigo, echo=TRUE, results='hide'}
+modelo_cuadratico <- update(modelo_completo, . ~ . + I(log_pob_total^2)) # Ajustamos el modelo alternativo.
+comparacion_anova <- anova(modelo_completo, modelo_cuadratico) # Contraste F para modelos anidados.
+```
+
+```{r comparacion-modelos-tablas, echo=FALSE}
+# Extraemos los indicadores de ajuste.
+resumen_inicial <- summary(modelo_completo)
+resumen_cuadratico <- summary(modelo_cuadratico)
+
+tabla_comparacion <- data.frame(
+  Modelo = c("Lineal inicial", "Con población cuadrática"),
+  R2 = c(resumen_inicial$r.squared, resumen_cuadratico$r.squared),
+  R2_ajustado = c(resumen_inicial$adj.r.squared, resumen_cuadratico$adj.r.squared),
+  Error_residual = c(resumen_inicial$sigma, resumen_cuadratico$sigma)
+)
+
+kable(tabla_comparacion, digits = 4, col.names = c("Modelo", "R²", "R² ajustado", "Error residual"),
+      caption = "Comparación de las especificaciones de regresión")
+
+kable(comparacion_anova, digits = 4, caption = "Contraste F de comparación entre modelos anidados")
+```
+
+La incorporación del término cuadrático mejora notablemente el ajuste: el $R^2$ aumenta de 0,2967 a 0,4115, el $R^2_{\mathrm{aj}}$ pasa de 0,2863 a 0,4020 y el error residual disminuye de 3,3262 a 3,0447 puntos porcentuales. El contraste $F$ convencional para modelos anidados resulta significativo ($F(1,744)=145{,}091$; $p<0{,}001$). Sin embargo, su interpretación requiere cautela debido a la heterocedasticidad detectada posteriormente. La mejora del $R^2$ ajustado y la significación del término cuadrático mediante errores estándar robustos HC3 proporcionan evidencia adicional favorable a la especificación cuadrática.
+
+### Diagnóstico de residuos y heterocedasticidad del modelo cuadrático
+
+Se examinan los residuos del modelo cuadrático para comprobar si la nueva especificación reduce los patrones sistemáticos observados en el modelo inicial (Figura 6).
+
+```{r diagnostico-cuadratico, echo=FALSE, fig.width=5.8, fig.height=2.3, out.width="80%", fig.pos="H", fig.cap="Residuos frente a valores ajustados del modelo cuadrático"}
+datos_residuos_cuad <- data.frame(
+  Ajustados = fitted(modelo_cuadratico),
+  Residuos = residuals(modelo_cuadratico)
+)
+
+ggplot(datos_residuos_cuad, aes(x = Ajustados, y = Residuos)) +
+  geom_point(alpha = 0.4, color = "steelblue", size = 0.8) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "firebrick") +
+  geom_smooth(method = "loess", se = FALSE, color = "darkgreen", linewidth = 0.8) +
+  labs(x = "Valores ajustados (%)", y = "Residuos (puntos porcentuales)") +
+  theme_minimal(base_size = 9)
+```
+
+Aunque el modelo cuadrático mejora el ajuste y corrige gran parte de la curvatura en el rango central, el gráfico de residuos (Figura 6) conserva cierta desviación para valores ajustados elevados y muestra diferencias claras en la dispersión vertical de los errores. Por ello, se evalúa formalmente la homocedasticidad aplicando el contraste de Breusch-Pagan studentizado (`bptest()`, paquete `lmtest`), cuya hipótesis nula es que la varianza condicional de los errores es constante, y se calculan los errores estándar robustos HC3:
+
+```{r bp-y-hc3-codigo, echo=TRUE, results='hide'}
+bp_cuadratico <- lmtest::bptest(modelo_cuadratico, studentize = TRUE) # Aplicamos el contraste de Breusch-Pagan al modelo cuadrático
+vcov_robusta <- sandwich::vcovHC(modelo_cuadratico, type = "HC3") # Matriz de covarianzas robusta HC3
+contrastes_robustos <- lmtest::coeftest(modelo_cuadratico, vcov. = vcov_robusta) # Contrastes con errores estándar robustos
+```
+
+El contraste de Breusch-Pagan rechaza la homocedasticidad ($BP = `r formatC(unname(bp_cuadratico$statistic), format="f", digits=4, decimal.mark=",")`$; `r unname(bp_cuadratico$parameter)` grados de libertad; $p < 0{,}0001$), en consonancia con el diagnóstico gráfico. Dado que la heterocedasticidad puede invalidar los errores estándar y contrastes convencionales, se emplean errores estándar robustos HC3 para evaluar la significación estadística de los coeficientes del modelo cuadrático. Este procedimiento mantiene las estimaciones por mínimos cuadrados ordinarios, pero modifica sus errores estándar, estadísticos de contraste y valores $p$.
+
+```{r errores-robustos-hc3, echo=FALSE}
+# Construimos la tabla.
+tabla_robusta <- data.frame(
+  Variable = rownames(contrastes_robustos),
+  Coeficiente = contrastes_robustos[, 1],
+  Error_robusto = contrastes_robustos[, 2],
+  Estadistico_t = contrastes_robustos[, 3],
+  Valor_p = contrastes_robustos[, 4],
+  row.names = NULL
+)
+# Formateamos los valores p para evitar mostrar ceros.
+tabla_robusta$Valor_p <- ifelse(tabla_robusta$Valor_p < 0.0001, "<0,0001",
+                                formatC(tabla_robusta$Valor_p, format = "f", digits = 4, decimal.mark = ","))
+
+# Presentamos los resultados.
+kable(tabla_robusta, digits = 4, row.names = FALSE,
+      col.names = c("Variable", "Coeficiente", "Error estándar HC3", "Estadístico t", "Valor p"),
+      caption = "Inferencia del modelo cuadrático con errores estándar robustos HC3")
+```
+
+Los resultados obtenidos mediante errores estándar robustos HC3 muestran que tanto el logaritmo de la población como su término cuadrático mantienen una asociación estadísticamente significativa con el indicador de desempleo juvenil registrado ($p < 0{,}001$). El coeficiente del término lineal es negativo ($-9{,}9568$), mientras que el del término cuadrático es positivo ($0{,}5022$). Esto indica que la asociación entre el tamaño municipal y el desempleo juvenil no es constante, sino que varía según el nivel de población. Por otra parte, la densidad empresarial ($p = 0{,}1340$) y el logaritmo de la renta ($p = 0{,}8689$) no presentan asociaciones individuales estadísticamente significativas al nivel del 5 % en esta especificación.
+
+La presencia de Formación Profesional presenta un coeficiente positivo de $1{,}9747$ puntos porcentuales ($p < 0{,}001$), manteniendo constantes las restantes variables. Esta asociación es coherente en signo con la obtenida en el modelo inicial. Respecto a las diferencias territoriales, Cádiz, Granada, Jaén y Sevilla presentan coeficientes estadísticamente significativos respecto a Almería, mientras que no se encuentra evidencia suficiente de diferencias ajustadas para Córdoba, Huelva y Málaga.
+
+### Detección de observaciones atípicas e influyentes y análisis de sensibilidad
+
+Para identificar municipios con valores atípicos o influencia elevada sobre las estimaciones, se examinan tres medidas: los residuos studentizados, que cuantifican desviaciones respecto al modelo; el apalancamiento, que identifica combinaciones poco habituales de variables explicativas; y la distancia de Cook, que mide la influencia de cada observación sobre el ajuste. Se utilizan como umbrales orientativos $\vert{}r_i\vert{}>3$ para los residuos studentizados, $h_{ii}>2p/n$ para el apalancamiento y $D_i>4/n$ para la distancia de Cook, donde $p=13$ es el número de parámetros estimados y $n=757$ el número de observaciones.
+
+```{r diagnostico-influencia-codigo, echo=TRUE}
+n <- nobs(modelo_cuadratico); p <- length(coef(modelo_cuadratico)) # Número de observaciones y parámetros.
+res_stud <- rstudent(modelo_cuadratico); hat_val <- hatvalues(modelo_cuadratico) 
+cook_d <- cooks.distance(modelo_cuadratico) # Residuos studentizados, apalancamientos y distancia de Cook
+```
+
+```{r diagnostico-influencia-tabla, echo=FALSE}
+# Resumimos los resultados.
+tabla_diagnostico <- data.frame(
+  Criterio = c("Residuos studentizados |r| > 3", "Apalancamiento > 2p/n", "Distancia de Cook > 4/n"),
+  Umbral = c(3, 2 * p / n, 4 / n),
+  Municipios = c(sum(abs(res_stud) > 3), sum(hat_val > 2 * p / n), sum(cook_d > 4 / n))
+)
+
+# Mostramos la tabla
+kable(tabla_diagnostico, digits = 4, caption = "Resumen de observaciones atípicas e influyentes")
+```
+
+Se identifican 15 municipios con residuos studentizados superiores a 3 en valor absoluto, 21 con apalancamiento elevado y 42 que superan el umbral orientativo de la distancia de Cook. Para evaluar la estabilidad de las estimaciones, se ajusta nuevamente el modelo cuadrático excluyendo temporalmente los 42 municipios cuya distancia de Cook supera el umbral orientativo de $4/n$, manteniendo las mismas variables explicativas y comparando los coeficientes mediante errores estándar robustos HC3. Esta exclusión se realiza exclusivamente como análisis de sensibilidad y no implica que las observaciones sean erróneas ni justifica eliminarlas del análisis principal.
+
+```{r sensibilidad-modelo, echo=FALSE}
+# Conservamos las observaciones que no superan el umbral.
+conservar <- cook_d <= (4 / n)
+
+# Ajustamos nuevamente el modelo con las mismas variables.
+modelo_sensibilidad <- update(modelo_cuadratico, data = datos[conservar, ])
+
+# Calculamos los errores estándar robustos HC3.
+robusto_sensibilidad <- lmtest::coeftest(modelo_sensibilidad, vcov. = sandwich::vcovHC(modelo_sensibilidad, type = "HC3"))
+
+# Formateamos los valores p para evitar mostrar ceros.
+formatear_p <- function(pval) {
+  ifelse(pval < 0.0001, "<0,0001", formatC(pval, format = "f", digits = 4, decimal.mark = ","))
+}
+
+# Construimos una tabla comparativa.
+tabla_sensibilidad <- data.frame(
+  Variable = rownames(contrastes_robustos),
+  Coef_completo = contrastes_robustos[, 1],
+  p_completo = formatear_p(contrastes_robustos[, 4]),
+  Coef_sensibilidad = robusto_sensibilidad[rownames(contrastes_robustos), 1],
+  p_sensibilidad = formatear_p(robusto_sensibilidad[rownames(contrastes_robustos), 4]),
+  row.names = NULL
+)
+
+kable(tabla_sensibilidad, digits = 4, row.names = FALSE,
+      col.names = c("Variable", "Coef. completo", "p completo", "Coef. sensibilidad", "p sensibilidad"),
+      caption = "Comparación de coeficientes con y sin observaciones influyentes")
+
+# Comparación de indicadores de ajuste.
+tabla_ajuste_sensibilidad <- data.frame(
+  Modelo = c("Completo", "Sin observaciones influyentes"),
+  Municipios = c(nobs(modelo_cuadratico), nobs(modelo_sensibilidad)),
+  R2_ajustado = c(summary(modelo_cuadratico)$adj.r.squared, summary(modelo_sensibilidad)$adj.r.squared),
+  Error_residual = c(sigma(modelo_cuadratico), sigma(modelo_sensibilidad))
+)
+
+kable(tabla_ajuste_sensibilidad, digits = 4, row.names = FALSE,
+      col.names = c("Modelo", "Municipios", "R² ajustado", "Error residual"),
+      caption = "Comparación del ajuste en el análisis de sensibilidad")
+```
+
+El análisis de sensibilidad compara el modelo cuadrático completo (757 municipios) con una estimación que excluye temporalmente las 42 observaciones cuya distancia de Cook supera el umbral de $4/n$ (715 municipios). La asociación no lineal con el tamaño municipal mantiene sus signos y significación estadística. El coeficiente de Formación Profesional permanece positivo y significativo, aunque su magnitud disminuye de 1,9747 a 1,3699 puntos porcentuales, lo que representa una reducción relativa del 30,6 % respecto a la estimación inicial. La densidad empresarial conserva su signo negativo, pero pasa de no ser significativa ($p=0{,}1340$) a serlo ($p=0{,}0066$), mientras que la renta continúa sin mostrar significación estadística ($p=0{,}5440$). El $R^2$ ajustado aumenta de 0,4020 a 0,4098 y el error residual disminuye de 3,0447 a 2,0274. Sin embargo, al tratarse de muestras distintas, estos cambios no implican una mejora directamente comparable del ajuste. Los resultados muestran estabilidad en algunas asociaciones y sensibilidad en otras, por lo que se mantienen los 757 municipios en el análisis principal.
+
+## Selección y simplificación del modelo
+
+Para estudiar si es posible obtener un modelo más sencillo sin perder capacidad explicativa, se comparan tres especificaciones ajustadas sobre los mismos 757 municipios: el modelo cuadrático completo (`M1`), un segundo modelo que elimina la variable renta (`M2`) y un tercero que elimina también la densidad empresarial (`M3`). Adicionalmente, se aplica un procedimiento automático de eliminación hacia atrás mediante el criterio de información de Akaike (AIC), partiendo del modelo cuadrático completo `M1`:
+
+```{r seleccion-codigo, echo=TRUE, results='hide'}
+# M1: modelo cuadrático completo.
+modelo_M1 <- modelo_cuadratico
+# M2: eliminamos la renta.
+modelo_M2 <- update(
+  modelo_M1,
+  . ~ . - log_renta
+)
+# M3: eliminamos también la densidad empresarial.
+modelo_M3 <- update(
+  modelo_M2,
+  . ~ . - empresas_1000hab
+)
+# Selección automática hacia atrás mediante AIC.
+modelo_step <- step(
+  modelo_M1,
+  direction = "backward",
+  trace = 0
+)
+
+# Comprobamos que el modelo seleccionado por AIC coincide con M2.
+misma_formula <- setequal(
+  attr(terms(modelo_step), "term.labels"),
+  attr(terms(modelo_M2), "term.labels")
+)
+
+if (!misma_formula) {
+  warning("El modelo seleccionado por step() no coincide con M2.")
+}
+```
+
+```{r seleccion-modelo, echo=FALSE}
+# Construimos la tabla comparativa.
+tabla_seleccion <- data.frame(
+  Modelo = c(
+  "M1. Completo",
+  "M2. Sin renta",
+  "M3. Sin renta ni empresas"
+),
+  R2_ajustado = c(summary(modelo_M1)$adj.r.squared, summary(modelo_M2)$adj.r.squared, summary(modelo_M3)$adj.r.squared),
+  AIC = c(AIC(modelo_M1), AIC(modelo_M2), AIC(modelo_M3)),
+  BIC = c(BIC(modelo_M1), BIC(modelo_M2), BIC(modelo_M3)),
+  Error_residual = c(sigma(modelo_M1), sigma(modelo_M2), sigma(modelo_M3))
+)
+
+kable(tabla_seleccion, digits = 3, row.names = FALSE,
+      col.names = c("Modelo", "R² ajustado", "AIC", "BIC", "Error residual"),
+      caption = "Comparación de modelos candidatos")
+```
+
+Los tres modelos presentan una capacidad explicativa similar. Tanto en la comparación manual como en el procedimiento automático `step()` se selecciona el modelo `M2` (que elimina la renta y conserva la densidad empresarial), ya que obtiene el mayor $R^2$ ajustado (0,403), el menor AIC (3846,911) y el menor error residual (3,043). Por su parte, `M3` presenta el menor BIC (3904,911), favoreciendo una especificación más sencilla. Se selecciona `M2` porque ofrece un equilibrio favorable entre ajuste, complejidad e interés sustantivo de las variables, conservando la densidad empresarial por su relevancia para la pregunta de investigación y por la sensibilidad de su asociación a las observaciones influyentes.
+
+### Interpretación del modelo seleccionado
+
+Antes de interpretar los coeficientes del modelo seleccionado `M2`, se comprueba si cumple el supuesto de homocedasticidad mediante el contraste de Breusch-Pagan y se realizan los diagnósticos de influencia y sensibilidad correspondientes.
+
+```{r diagnostico-M2, include=FALSE}
+# Contraste de Breusch-Pagan del modelo definitivo M2.
+bp_M2 <- lmtest::bptest(modelo_M2, studentize = TRUE)
+
+# Inferencia robusta HC3.
+coef_M2 <- lmtest::coeftest(modelo_M2, vcov. = sandwich::vcovHC(modelo_M2, type = "HC3"))
+
+# Intervalos de confianza robustos del 95 %.
+valor_critico <- qt(0.975, df.residual(modelo_M2))
+intervalos_M2 <- data.frame(
+  Variable = rownames(coef_M2),
+  Inferior = coef_M2[, 1] - valor_critico * coef_M2[, 2],
+  Superior = coef_M2[, 1] + valor_critico * coef_M2[, 2],
+  row.names = NULL
+)
+n_M2 <- nobs(modelo_M2); p_M2 <- length(coef(modelo_M2))
+residuos_M2 <- rstudent(modelo_M2); apalancamiento_M2 <- hatvalues(modelo_M2); cook_M2 <- cooks.distance(modelo_M2)
+
+# Sensibilidad del modelo definitivo M2 excluyendo Cook > 4/n
+conservar_M2 <- cook_M2 <= (4 / n_M2)
+modelo_M2_sens <- update(modelo_M2, data = datos[conservar_M2, ])
+robusto_M2_sens <- lmtest::coeftest(modelo_M2_sens, vcov. = sandwich::vcovHC(modelo_M2_sens, type = "HC3"))
+coef_FP_M2_comp <- coef_M2["tiene_FP", 1]
+coef_FP_M2_sens <- robusto_M2_sens["tiene_FP", 1]
+cambio_FP_M2 <- 100 * abs(coef_FP_M2_sens - coef_FP_M2_comp) / abs(coef_FP_M2_comp)
+p_emp_M2_sens <- robusto_M2_sens["empresas_1000hab", 4]
+```
+
+El contraste de Breusch-Pagan sobre el modelo `M2` proporciona un estadístico $BP=`r formatC(unname(bp_M2$statistic), format="f", digits=2, decimal.mark=",")`$, con `r unname(bp_M2$parameter)` grados de libertad y un valor $p<0{,}001$, por lo que se rechaza la hipótesis nula de homocedasticidad. En consecuencia, para realizar la inferencia estadística y construir los intervalos de confianza al 95 % del modelo `M2` se utilizan errores estándar robustos HC3.
+
+```{r coeficientes-modelo-seleccionado, echo=FALSE}
+# Tabla de coeficientes.
+tabla_M2 <- data.frame(
+  Variable = rownames(coef_M2),
+  Coeficiente = coef_M2[, 1],
+  Error_HC3 = coef_M2[, 2],
+  IC_95 = sprintf("[%.3f; %.3f]", intervalos_M2$Inferior, intervalos_M2$Superior),
+  Estadistico_t = coef_M2[, 3],
+  Valor_p = ifelse(coef_M2[, 4] < 0.0001, "<0,0001", formatC(coef_M2[, 4], format = "f", digits = 4, decimal.mark = ",")),
+  row.names = NULL
+)
+
+kable(
+  tabla_M2[, c("Variable", "Coeficiente", "Error_HC3", "IC_95", "Valor_p")],
+  digits = 4,
+  row.names = FALSE,
+  col.names = c("Variable", "Coeficiente", "Error HC3", "IC 95 %", "Valor p"),
+  caption = "Coeficientes e intervalos de confianza del modelo M2 con errores estándar robustos HC3"
+)
+```
+
+La ecuación estimada del modelo seleccionado `M2` es:
+$$\widehat{Y}_i = 52{,}9840 - 10{,}0149\log(P_i) + 0{,}5057[\log(P_i)]^2 - 0{,}0168E_i + 1{,}9750FP_i + \sum_{k=1}^{7}\widehat{\gamma}_kD_{ik}.$$
+En esta expresión, $\widehat{Y}_i$ representa el indicador de desempleo juvenil registrado estimado para el municipio $i$; $P_i$ es su población total, $E_i$ es el número de empresas por cada 1.000 habitantes y $FP_i$ indica la presencia de oferta local de Formación Profesional. Los coeficientes $\widehat{\gamma}_k$ corresponden a las diferencias provinciales estimadas respecto a Almería, que se utiliza como categoría de referencia.
+
+Los resultados del modelo `M2`, ajustado mediante mínimos cuadrados ordinarios y evaluado mediante errores estándar robustos HC3, muestran que el tamaño municipal mantiene una asociación no lineal y estadísticamente significativa con el indicador de desempleo juvenil registrado. El coeficiente del logaritmo de la población es negativo ($-10{,}0149$), mientras que el correspondiente a su término cuadrático es positivo ($0{,}5057$), ambos con valores $p$ inferiores a 0,001. La combinación de ambos coeficientes describe una relación aproximadamente en forma de U. El indicador estimado disminuye conforme aumenta la población en los municipios más pequeños, hasta alcanzar un mínimo a partir del cual comienza a aumentar, manteniendo constantes las restantes variables del modelo. La densidad empresarial presenta un coeficiente negativo ($-0{,}0168$), aunque no alcanza significación estadística al nivel del 5 % ($p = 0{,}1049$).
+
+Por su parte, la presencia de Formación Profesional mantiene una asociación positiva y estadísticamente significativa. Su coeficiente estimado es de $1{,}9750$ puntos porcentuales ($p < 0{,}001$), manteniendo constantes las demás variables explicativas, con un intervalo de confianza robusto del 95 % de [`r sprintf("%.2f", intervalos_M2$Inferior[intervalos_M2$Variable == "tiene_FP"])`; `r sprintf("%.2f", intervalos_M2$Superior[intervalos_M2$Variable == "tiene_FP"])`] puntos porcentuales. Al no incluir el cero, este intervalo es coherente con la significación estadística observada. Respecto a las diferencias territoriales, Cádiz, Granada y Sevilla presentan coeficientes positivos estadísticamente significativos en comparación con Almería, mientras que Jaén presenta un coeficiente negativo. Para Córdoba, Huelva y Málaga no se encuentra evidencia suficiente de diferencias ajustadas al nivel del 5 %.
+
+El diagnóstico de observaciones influyentes del modelo definitivo `M2` identifica `r sum(abs(residuos_M2) > 3)` municipios con residuos studentizados superiores a 3 en valor absoluto, `r sum(apalancamiento_M2 > 2*p_M2/n_M2)` con apalancamiento elevado y `r sum(cook_M2 > 4/n_M2)` cuya distancia de Cook supera el umbral orientativo de $4/n$. En el análisis de sensibilidad de `M2` (excluyendo temporalmente esos `r sum(!conservar_M2)` municipios y ajustando sobre los `r sum(conservar_M2)` restantes), la presencia de FP mantiene su asociación positiva y significativa, aunque su coeficiente disminuye de $`r formatC(coef_FP_M2_comp, format="f", digits=4, decimal.mark=",")`$ a $`r formatC(coef_FP_M2_sens, format="f", digits=4, decimal.mark=",")`$ puntos porcentuales (una reducción del `r formatC(cambio_FP_M2, format="f", digits=2, decimal.mark=",")`\%), mientras que la densidad empresarial conserva su signo negativo y pasa a ser estadísticamente significativa ($p = `r formatC(p_emp_M2_sens, format="f", digits=4, decimal.mark=",")`$ ). Estos resultados indican que algunas estimaciones son sensibles a las observaciones influyentes, por lo que se mantiene el modelo completo como referencia principal.
+
+## Respuesta a las preguntas de investigación
+
+### Primera pregunta: características asociadas al desempleo juvenil
+
+La primera pregunta planteaba en qué medida las características demográficas, empresariales y la oferta local de Formación Profesional están asociadas con las diferencias territoriales en el desempleo juvenil registrado. Los resultados indican que el tamaño municipal constituye una de las variables más relevantes del análisis. El modelo `M2` identifica una asociación no lineal, aproximadamente en forma de U, entre el logaritmo de la población y el indicador de desempleo juvenil registrado. Manteniendo constantes las restantes variables, el indicador estimado disminuye hasta alcanzar un mínimo matemático en $\log(P_i) = 10{,}0149 / (2 \times 0{,}5057) \approx 9{,}902$ (próximo a los **20.000 habitantes**) y aumenta a partir de ese valor. Este punto corresponde al mínimo matemático de la relación estimada y no debe interpretarse como un tamaño municipal óptimo ni como una relación causal.
+
+La presencia de Formación Profesional también muestra una asociación estadísticamente significativa, de signo positivo, una vez consideradas las restantes características municipales. Este resultado contrasta con las diferencias descriptivas iniciales y pone de manifiesto la importancia de controlar simultáneamente otras variables, sin que permita concluir que la FP provoque un aumento del desempleo juvenil. La densidad empresarial presenta una asociación negativa, aunque no estadísticamente significativa al 5 % en el modelo seleccionado, y se identifican diferencias territoriales significativas entre provincias. El modelo seleccionado presenta un $R^2$ ajustado cercano al 40 %, por lo que una parte importante de las diferencias municipales permanece sin explicar.
+
+### Segunda pregunta: municipios con desviaciones destacadas
+
+Para responder a la segunda pregunta de investigación, se identifican los municipios que presentan las mayores diferencias entre el indicador de desempleo juvenil registrado y los valores estimados por el modelo `M2`. El residuo se calcula como la diferencia entre el valor observado y el estimado: los residuos positivos indican valores superiores a los previstos por el modelo, mientras que los negativos representan valores inferiores. Se presentan en una tabla conjunta los cinco municipios con mayores desviaciones positivas y los cinco con mayores desviaciones negativas, seleccionados a partir de los residuos calculados para los 757 municipios analizados.
+
+```{r municipios-desviaciones, echo=FALSE}
+# Calculamos los valores observados, estimados y residuos
+# utilizando el modelo finalmente seleccionado (M2).
+datos_municipios <- datos |>
+  mutate(
+    Desempleo_observado = tasa_paro_joven,
+    Desempleo_estimado = as.numeric(fitted(modelo_M2)),
+    Residuo = as.numeric(residuals(modelo_M2))
+  )
+
+# Municipios con mayores residuos positivos.
+municipios_superiores <- datos_municipios |>
+  arrange(desc(Residuo)) |>
+  slice_head(n = 5) |>
+  mutate(Grupo = "Desviación positiva (+)") |>
+  select(Grupo, municipio, provincia, Desempleo_observado, Desempleo_estimado, Residuo)
+
+# Municipios con mayores residuos negativos.
+municipios_inferiores <- datos_municipios |>
+  arrange(Residuo) |>
+  slice_head(n = 5) |>
+  mutate(Grupo = "Desviación negativa (-)") |>
+  select(Grupo, municipio, provincia, Desempleo_observado, Desempleo_estimado, Residuo)
+
+# Tabla con cinco municipios con mayores desviaciones positivas
+# y cinco con mayores desviaciones negativas.
+kable(
+  bind_rows(municipios_superiores, municipios_inferiores),
+  digits = 2,
+  col.names = c(
+    "Tipo de desviación", "Municipio", "Provincia",
+    "Observado (%)", "Estimado (%)", "Residuo (pp)"
+  ),
+  caption = "Cinco municipios con mayores desviaciones positivas y cinco con mayores desviaciones negativas según M2"
+)
+```
+
+Entre las mayores desviaciones positivas destacan **Gobernador (Granada)**, con $+17{,}58$ puntos porcentuales respecto al valor estimado; **Senés (Almería)**, con $+16{,}89$; y **Benizalón (Almería)**, con $+16{,}22$. Por el contrario, las mayores desviaciones negativas corresponden a **Almócita (Almería)**, con $-12{,}61$ puntos porcentuales respecto al valor estimado; **Villarrodrigo (Jaén)**, con $-9{,}80$; y **Salares (Málaga)**, con $-9{,}41$.
+
+Las desviaciones identificadas representan diferencias entre los valores observados y los estimados por el modelo `M2`, condicionadas a las variables explicativas incluidas. Un residuo elevado no implica necesariamente que el municipio presente un comportamiento anómalo, ya que puede reflejar factores no considerados, variabilidad del indicador o limitaciones de los datos, especialmente en municipios pequeños donde una población juvenil reducida genera mayor variabilidad. Por tanto, estos resultados permiten señalar municipios que requieren un análisis más detallado, pero no identificar las causas de sus diferencias ni establecer relaciones causales.
+
+# Conclusiones y limitaciones
+
+El análisis de 757 municipios andaluces identifica asociaciones relevantes entre las características municipales y el desempleo juvenil registrado. El tamaño de la población presenta una relación no lineal con el indicador, mientras que la presencia local de Formación Profesional muestra una asociación positiva tras considerar las restantes variables. La densidad empresarial mantiene un coeficiente negativo, aunque sin significación estadística al nivel del 5 % en el modelo seleccionado. El modelo M2 presenta un $R^2$ ajustado cercano al 40 %, lo que refleja una capacidad explicativa moderada de las diferencias municipales observadas.
+
+Los análisis de sensibilidad muestran que algunas estimaciones son sensibles a las observaciones influyentes. En particular, el coeficiente asociado a la FP disminuye un
+`r formatC(cambio_FP_M2, format="f", digits=2, decimal.mark=",")`\% al excluir temporalmente las observaciones influyentes, aunque conserva su signo y significación estadística. Asimismo, la densidad empresarial pasa a presentar una asociación estadísticamente significativa. Estos resultados aconsejan interpretar con cautela la magnitud y estabilidad de las asociaciones estimadas.
+
+Las principales limitaciones proceden del carácter observacional del estudio, del uso de un indicador de desempleo registrado distinto de la tasa oficial, de la aproximación de valores censurados y de las diferencias temporales y de disponibilidad entre las fuentes. También pueden existir variables omitidas y dependencia espacial entre municipios. Como futuras líneas de investigación, se propone incorporar información sobre la estructura sectorial, analizar la autocorrelación espacial y ampliar el estudio a varios años. Los resultados permiten describir patrones territoriales relevantes, pero no establecer efectos causales.
+
+# Referencias
+
+- **Faraway, J. J. (2004).** *Linear Models with R*. Chapman & Hall/CRC, Texts in Statistical Science Series. Disponible en: https://cran.r-project.org/doc/contrib/Faraway-PRA.pdf
+- **García-Portugués, E. (2025).** *Notes for Predictive Modeling*. Disponible en: https://bookdown.org/egarpor/PM-UC3M/PM-UC3M.pdf
+- **Instituto Nacional de Estadística (INE) (2023).** *Atlas de Distribución de Renta de los Hogares (ADRH)*. Disponible en: https://www.ine.es/
+- **Instituto Nacional de Estadística (INE) (2025).** *Cifras oficiales de población de los municipios españoles: Revisión del Padrón Municipal y Censo anual de población (16 a 24 años)*. Disponible en: https://www.ine.es/
+- **Instituto Nacional de Estadística (INE) (2025).** *Directorio Central de Empresas (DIRCE): Empresas por municipio y actividad principal*. Disponible en: https://www.ine.es/
+- **Junta de Andalucía, Consejería de Desarrollo Educativo y Formación Profesional (2024).** *Oferta educativa de Formación Profesional de Grado Medio y Grado Superior por municipio (curso 2024-2025)*. Disponible en: https://www.juntadeandalucia.es/educacion/
+- **Servicio Público de Empleo Estatal (SEPE) (2025).** *Estadísticas de paro registrado y contratos por municipios (desempleo registrado menor de 25 años, meses de enero a diciembre de 2025)*. Disponible en: https://www.sepe.es/
+- **Zeileis, A. (2004).** Econometric Computing with HC and HAC Covariance Matrix Estimators. *Journal of Statistical Software*, 11(10), 1-17.
+- **Apuntes asignatura Entornos de computación estadística**
+
